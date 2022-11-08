@@ -1,18 +1,20 @@
 import logging
 from pyrogram.errors import InputUserDeactivated, UserNotParticipant, FloodWait, UserIsBlocked, PeerIdInvalid
-from info import AUTH_CHANNEL, LONG_IMDB_DESCRIPTION, MAX_LIST_ELM
+from info import AUTH_CHANNEL, LONG_IMDB_DESCRIPTION, MAX_LIST_ELM, DROPLINK_API, LONG_DROPLINK_URL
 from imdb import IMDb
 import asyncio
-from pyrogram.types import Message, InlineKeyboardButton
-from pyrogram import enums
+from pyrogram.types import Message
 from typing import Union
 import re
 import os
 from datetime import datetime
 from typing import List
+from pyrogram.types import InlineKeyboardButton
 from database.users_chats_db import db
 from bs4 import BeautifulSoup
 import requests
+import pyshorteners
+import aiohttp
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -225,7 +227,7 @@ def extract_user(message: Message) -> Union[int, str]:
     elif len(message.command) > 1:
         if (
             len(message.entities) > 1 and
-            message.entities[1].type == enums.MessageEntityType.TEXT_MENTION
+            message.entities[1].type == "text_mention"
         ):
            
             required_entity = message.entities[1]
@@ -259,18 +261,18 @@ def last_online(from_user):
     time = ""
     if from_user.is_bot:
         time += "🤖 Bot :("
-    elif from_user.status == enums.UserStatus.RECENTLY:
+    elif from_user.status == 'recently':
         time += "Recently"
-    elif from_user.status == enums.UserStatus.LAST_WEEK:
+    elif from_user.status == 'within_week':
         time += "Within the last week"
-    elif from_user.status == enums.UserStatus.LAST_MONTH:
+    elif from_user.status == 'within_month':
         time += "Within the last month"
-    elif from_user.status == enums.UserStatus.LONG_AGO:
+    elif from_user.status == 'long_time_ago':
         time += "A long time ago :("
-    elif from_user.status == enums.UserStatus.ONLINE:
+    elif from_user.status == 'online':
         time += "Currently Online"
-    elif from_user.status == enums.UserStatus.OFFLINE:
-        time += from_user.last_online_date.strftime("%a, %d %b %Y, %H:%M:%S")
+    elif from_user.status == 'offline':
+        time += datetime.fromtimestamp(from_user.last_online_date).strftime("%a, %d %b %Y, %H:%M:%S")
     return time
 
 
@@ -375,3 +377,42 @@ def humanbytes(size):
         size /= power
         n += 1
     return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
+
+
+####################  droplink  ####################
+async def droplink_url(link, x=""):
+    if LONG_DROPLINK_URL == "True" or LONG_DROPLINK_URL is True:
+        text = f'https://du-link.in/st?api={DROPLINK_API}&url={url}'
+        return text
+    else:
+        https = link.split(":")[0]
+        if "http" == https:
+            https = "https"
+            link = link.replace("http", https)
+        url = f'https://du-link.in/api'
+        params = {'api': DROPLINK_API,
+                'url': link,
+                'alias': x
+                }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
+                    data = await response.json()
+                    if data["status"] == "success":
+                        return data['shortenedUrl']
+                    else:
+                        return f"Error: {data['message']}"
+
+        except Exception as e:
+            logger.error(e)
+            links = f'https://du-link.in/st?api={DROPLINK_API}&url={link}'
+            return await tiny_url_main(links)
+
+
+# Incase droplink server fails, bot will return https://du-link.in/st?api={DROPLINK_API}&url={link} 
+
+# TinyUrl 
+async def tiny_url_main(url):
+	s = pyshorteners.Shortener()
+	return s.tinyurl.short(url)
